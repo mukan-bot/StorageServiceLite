@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StorageServiceLite Viewer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Static Web UI</p>
+        <h1>StorageServiceLite Viewer</h1>
+        <p class="lead">
+          <code>.ssobj</code> ファイルをブラウザーだけで読み込み、保存済みアイテムとヒストリーを閲覧できます。
+        </p>
+      </div>
+      <a class="help-link" href="../README.md" title="READMEを開く">README</a>
+    </header>
+
+    <main class="layout">
+      <section class="panel loader-panel" aria-labelledby="loader-title">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Step 1</p>
+            <h2 id="loader-title">ストレージファイルを開く</h2>
+          </div>
+        </div>
+
+        <label id="drop-zone" class="drop-zone" for="file-input">
+          <input id="file-input" type="file" accept=".ssobj,application/octet-stream" />
+          <span class="drop-icon" aria-hidden="true">⬆</span>
+          <strong>.ssobj を選択、またはここにドロップ</strong>
+          <span>ファイルはローカルでのみ解析され、サーバーへ送信されません。</span>
+        </label>
+
+        <div id="file-summary" class="file-summary hidden" aria-live="polite"></div>
+        <div id="message" class="message hidden" role="status"></div>
+      </section>
+
+      <section class="panel list-panel" aria-labelledby="list-title">
+        <div class="panel-heading split-heading">
+          <div>
+            <p class="eyebrow">Step 2</p>
+            <h2 id="list-title">アイテム一覧</h2>
+          </div>
+          <span id="item-count" class="pill">0 items</span>
+        </div>
+
+        <div class="toolbar">
+          <label class="search-label" for="search-input">検索</label>
+          <input id="search-input" type="search" placeholder="ULID / 名前で絞り込み" disabled />
+          <label class="checkbox-label">
+            <input id="show-deleted" type="checkbox" disabled />
+            削除済みも表示
+          </label>
+        </div>
+
+        <ol id="item-list" class="item-list empty-state">
+          <li>ストレージファイルを読み込むと一覧が表示されます。</li>
+        </ol>
+      </section>
+
+      <section class="panel detail-panel" aria-labelledby="detail-title">
+        <div class="panel-heading split-heading">
+          <div>
+            <p class="eyebrow">Step 3</p>
+            <h2 id="detail-title">アイテム詳細</h2>
+          </div>
+          <button id="download-button" type="button" class="button" disabled>選択中のデータを保存</button>
+        </div>
+
+        <div id="detail-empty" class="empty-detail">
+          左の一覧からアイテムを選択してください。
+        </div>
+
+        <article id="detail" class="detail hidden">
+          <dl class="metadata-grid">
+            <div>
+              <dt>名前</dt>
+              <dd id="detail-name">-</dd>
+            </div>
+            <div>
+              <dt>ULID</dt>
+              <dd id="detail-ulid" class="mono">-</dd>
+            </div>
+            <div>
+              <dt>ヒストリー数</dt>
+              <dd id="detail-history-count">-</dd>
+            </div>
+            <div>
+              <dt>最新サイズ</dt>
+              <dd id="detail-size">-</dd>
+            </div>
+          </dl>
+
+          <label class="history-label" for="history-select">表示するヒストリー</label>
+          <select id="history-select"></select>
+
+          <dl class="metadata-grid compact">
+            <div>
+              <dt>作成日時</dt>
+              <dd id="chunk-created">-</dd>
+            </div>
+            <div>
+              <dt>チャンク位置</dt>
+              <dd id="chunk-offset" class="mono">-</dd>
+            </div>
+            <div>
+              <dt>チャンクサイズ</dt>
+              <dd id="chunk-size">-</dd>
+            </div>
+          </dl>
+
+          <section class="preview-section" aria-labelledby="preview-title">
+            <div class="panel-heading split-heading preview-heading">
+              <h3 id="preview-title">プレビュー</h3>
+              <div class="segmented" role="group" aria-label="プレビューモード">
+                <button type="button" data-preview="auto" class="active">Auto</button>
+                <button type="button" data-preview="text">Text</button>
+                <button type="button" data-preview="hex">Hex</button>
+              </div>
+            </div>
+            <div id="preview" class="preview">データを読み込み中...</div>
+          </section>
+        </article>
+      </section>
+    </main>
+
+    <template id="item-template">
+      <li>
+        <button type="button" class="item-card">
+          <span class="item-name"></span>
+          <span class="item-ulid mono"></span>
+          <span class="item-meta"></span>
+        </button>
+      </li>
+    </template>
+
+    <script defer src="app.js"></script>
+  </body>
+</html>
