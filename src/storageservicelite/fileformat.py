@@ -110,20 +110,32 @@ class StorageFile:
                 continue
 
             try:
-                with open(self.path, "rb") as fp:
-                    header = fp.read(HEADER_SIZE)
-                    if len(header) < HEADER_SIZE:
-                        raise IOError("ヘッダーの読み取りに失敗しました。")
-                    _version, index_offset = _unpack_header(header)
-                    fp.seek(index_offset)
-                    index_bytes = fp.read()
-                self._index = json.loads(index_bytes.decode("utf-8")) if index_bytes else {}
+                self._index = self._read_index_from_disk()
                 return
             except json.JSONDecodeError:
                 # ロック状態の遷移中に一時的な不整合を読んだ場合はリトライする
                 if time.monotonic() > deadline:
                     raise
                 time.sleep(0.01)
+
+    def _load_locked(self) -> None:
+        """
+        ロック取得済み状態でストレージファイルを読み込み、インデックスを更新する。
+
+        呼び出し側が同一ファイルの書き込みロックを保持している前提。
+        """
+        self._index = self._read_index_from_disk()
+
+    def _read_index_from_disk(self) -> dict[str, Any]:
+        """ディスク上のインデックスを読み込んで返す。"""
+        with open(self.path, "rb") as fp:
+            header = fp.read(HEADER_SIZE)
+            if len(header) < HEADER_SIZE:
+                raise IOError("ヘッダーの読み取りに失敗しました。")
+            _version, index_offset = _unpack_header(header)
+            fp.seek(index_offset)
+            index_bytes = fp.read()
+        return json.loads(index_bytes.decode("utf-8")) if index_bytes else {}
 
     # ------------------------------------------------------------------ #
     # ファイルへの書き込み
@@ -217,7 +229,7 @@ class StorageFile:
         try:
             # 別インスタンスが先に書き込んだ最新状態を取り込んでから更新する。
             # これにより、古いメモリ上インデックスに基づく追記位置計算を防ぐ。
-            self._load()
+            self._load_locked()
 
             # データチャンクをファイル末尾のデータ領域に追記
             data_end = self._calc_data_end()
@@ -297,34 +309,45 @@ class StorageFile:
         """
         if self.read_only:
             raise PermissionError("読み取り専用モードでは書き込みできません。")
+        self._acquire_lock()
+        try:
+            self._load_locked()
 
-        entry = self._get_entry(ulid)
-        chunks = entry["chunks"]
+            entry = self._get_entry(ulid)
+            chunks = entry["chunks"]
 
-        if history is None:
-            # 最新バージョン (末尾) を1つ削除
-            new_chunks = chunks[:-1]
-        else:
-            # history=N を新しい最新(history=1)にする
-            # 末尾から (N-1) 個を削除する
-            # 例: 4バージョン, history=2 → 末尾1個削除 → 3バージョン残る
-            if history < 1 or history > len(chunks):
-                raise IndexError(
-                    f"ヒストリー {history} は範囲外です (利用可能: 1〜{len(chunks)})。"
-                )
-            new_len = len(chunks) - (history - 1)
-            new_chunks = chunks[:new_len]
+            if history is None:
+                # 最新バージョン (末尾) を1つ削除
+                new_chunks = chunks[:-1]
+            else:
+                # history=N を新しい最新(history=1)にする
+                # 末尾から (N-1) 個を削除する
+                # 例: 4バージョン, history=2 → 末尾1個削除 → 3バージョン残る
+                if history < 1 or history > len(chunks):
+                    raise IndexError(
+                        f"ヒストリー {history} は範囲外です (利用可能: 1〜{len(chunks)})。"
+                    )
+                new_len = len(chunks) - (history - 1)
+                new_chunks = chunks[:new_len]
 
-        self._index[ulid]["chunks"] = new_chunks
-        self._flush()
+            self._index[ulid]["chunks"] = new_chunks
+            self._flush_locked()
+        finally:
+            self._release_lock()
 
     def delete_item(self, ulid: str) -> None:
         """アイテムを完全に削除する (インデックスから除去)。"""
         if self.read_only:
             raise PermissionError("読み取り専用モードでは書き込みできません。")
-        self._get_entry(ulid)  # 存在確認
-        del self._index[ulid]
-        self._flush()
+
+        self._acquire_lock()
+        try:
+            self._load_locked()
+            self._get_entry(ulid)  # 存在確認
+            del self._index[ulid]
+            self._flush_locked()
+        finally:
+            self._release_lock()
 
     def get_metadata(self, ulid: str) -> dict:
         """
