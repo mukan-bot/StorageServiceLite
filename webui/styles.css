@@ -408,6 +408,58 @@ h3 {
   background: white;
 }
 
+.upload-section {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.upload-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.65rem 0.8rem;
+  align-items: center;
+}
+
+.upload-grid label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.upload-grid input,
+.upload-grid select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  color: var(--text);
+  padding: 0.6rem 0.75rem;
+}
+
+.upload-checkbox {
+  margin-top: 0.9rem;
+  grid-column: auto;
+}
+
+.upload-actions {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.upload-status {
+  font-size: 0.85rem;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.upload-status.error {
+  color: var(--danger);
+}
+
 @media (max-width: 1180px) {
   .layout {
     grid-template-columns: 1fr 1fr;
@@ -430,6 +482,10 @@ h3 {
   }
 
   .metadata-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-grid {
     grid-template-columns: 1fr;
   }
 }

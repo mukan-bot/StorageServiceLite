@@ -76,8 +76,12 @@ print(metadata)  # {'name': 'item1', 'size': 13, 'created_at': '2024-06-01T12:00
 2. 作成済みの `.ssobj` ファイルを選択、または画面へドラッグ&ドロップします。
 3. アイテム一覧からULID/名前で検索し、ヒストリーごとの内容をテキスト・画像・Hexで確認できます。
 4. 選択中のヒストリーデータは「選択中のデータを保存」からダウンロードできます。
+5. 「S3互換アップロード」では、読み込んだ `.ssobj` 全体または選択中ヒストリーを S3互換API へ `PutObject` できます。
 
-このUIはHTML/CSS/JavaScriptのみで動作し、読み込んだファイルを外部サーバーへ送信しません。
+S3互換アップロードを使う場合は、Endpoint URL / Region / Bucket / Object Key / Access Key / Secret Key を入力してください。
+Path-styleアクセスが必要な環境（MinIO など）は「Path-style アクセスを使う」を有効にします。
+
+このUIはHTML/CSS/JavaScriptのみで動作します。通常の閲覧操作ではローカル解析のみ行い、S3アップロードを実行した場合のみ指定したエンドポイントへ送信します。
 
 ## 内部実装
 

@@ -123,6 +123,54 @@
             </div>
             <div id="preview" class="preview">データを読み込み中...</div>
           </section>
+
+          <section class="upload-section" aria-labelledby="upload-title">
+            <div class="panel-heading split-heading preview-heading">
+              <div>
+                <p class="eyebrow">Step 4</p>
+                <h3 id="upload-title">S3互換アップロード</h3>
+              </div>
+            </div>
+
+            <div class="upload-grid">
+              <label for="s3-endpoint">Endpoint URL</label>
+              <input id="s3-endpoint" type="url" placeholder="https://s3.example.com" autocomplete="url" />
+
+              <label for="s3-region">Region</label>
+              <input id="s3-region" type="text" value="us-east-1" autocomplete="off" />
+
+              <label for="s3-bucket">Bucket</label>
+              <input id="s3-bucket" type="text" placeholder="my-bucket" autocomplete="off" />
+
+              <label for="s3-object-key">Object Key</label>
+              <input id="s3-object-key" type="text" placeholder="backups/sample.ssobj" autocomplete="off" />
+
+              <label for="s3-access-key">Access Key ID</label>
+              <input id="s3-access-key" type="text" autocomplete="off" />
+
+              <label for="s3-secret-key">Secret Access Key</label>
+              <input id="s3-secret-key" type="password" autocomplete="off" />
+
+              <label for="s3-session-token">Session Token (任意)</label>
+              <input id="s3-session-token" type="password" autocomplete="off" />
+
+              <label for="s3-upload-target">アップロード対象</label>
+              <select id="s3-upload-target">
+                <option value="storage-file">読み込み中の .ssobj ファイル</option>
+                <option value="selected-history">選択中アイテムの表示ヒストリー</option>
+              </select>
+            </div>
+
+            <label class="checkbox-label upload-checkbox">
+              <input id="s3-force-path-style" type="checkbox" checked />
+              Path-style アクセスを使う
+            </label>
+
+            <div class="upload-actions">
+              <button id="s3-upload-button" type="button" class="button" disabled>S3へアップロード</button>
+              <span id="s3-upload-status" class="upload-status" aria-live="polite"></span>
+            </div>
+          </section>
         </article>
       </section>
     </main>
