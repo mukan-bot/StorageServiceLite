@@ -107,6 +107,25 @@ class TestConcurrentWritesMultipleInstances:
         assert not errors, f"例外が発生しました: {errors}"
         assert len(results) == n_threads
 
+    def test_preopened_instances_do_not_overwrite_each_other(self, tmp_storage_path):
+        """先に開いた複数インスタンスでも、互いの追記を上書きしない。"""
+        # ファイル作成後、2つのインスタンスを先に開く (片方が古いインデックスを保持し得る)
+        read_storage(tmp_storage_path, create_if_not_exists=True)
+        st1 = read_storage(tmp_storage_path)
+        st2 = read_storage(tmp_storage_path)
+
+        ulid1 = st1.set(item(name="from-st1", data=b"data-1"))
+        ulid2 = st2.set(item(name="from-st2", data=b"data-2"))
+
+        # 新しいインスタンスで検証し、オンディスクの整合性を確認する
+        verifier = read_storage(tmp_storage_path)
+        listed = verifier.list()
+
+        assert ulid1 in listed
+        assert ulid2 in listed
+        assert verifier.get(ulid1).data == b"data-1"
+        assert verifier.get(ulid2).data == b"data-2"
+
     def test_lock_prevents_simultaneous_writes(self, tmp_storage_path):
         """ロックファイルが存在する間は書き込みがブロックされ、解放後に成功する。"""
         storage = read_storage(tmp_storage_path, create_if_not_exists=True)

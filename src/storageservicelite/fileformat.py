@@ -98,14 +98,32 @@ class StorageFile:
 
     def _load(self) -> None:
         """ストレージファイルを読み込み、インデックスをメモリに展開する。"""
-        with open(self.path, "rb") as fp:
-            header = fp.read(HEADER_SIZE)
-            if len(header) < HEADER_SIZE:
-                raise IOError("ヘッダーの読み取りに失敗しました。")
-            _version, index_offset = _unpack_header(header)
-            fp.seek(index_offset)
-            index_bytes = fp.read()
-        self._index = json.loads(index_bytes.decode("utf-8")) if index_bytes else {}
+        lock_path = self.path + LOCK_SUFFIX
+        deadline = time.monotonic() + 5.0
+
+        while True:
+            # 書き込み中はロック解放を待ってから読み込む
+            if os.path.exists(lock_path):
+                if time.monotonic() > deadline:
+                    raise TimeoutError("ストレージファイルの読み込み待機がタイムアウトしました。")
+                time.sleep(0.01)
+                continue
+
+            try:
+                with open(self.path, "rb") as fp:
+                    header = fp.read(HEADER_SIZE)
+                    if len(header) < HEADER_SIZE:
+                        raise IOError("ヘッダーの読み取りに失敗しました。")
+                    _version, index_offset = _unpack_header(header)
+                    fp.seek(index_offset)
+                    index_bytes = fp.read()
+                self._index = json.loads(index_bytes.decode("utf-8")) if index_bytes else {}
+                return
+            except json.JSONDecodeError:
+                # ロック状態の遷移中に一時的な不整合を読んだ場合はリトライする
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.01)
 
     # ------------------------------------------------------------------ #
     # ファイルへの書き込み
@@ -197,6 +215,10 @@ class StorageFile:
 
         self._acquire_lock()
         try:
+            # 別インスタンスが先に書き込んだ最新状態を取り込んでから更新する。
+            # これにより、古いメモリ上インデックスに基づく追記位置計算を防ぐ。
+            self._load()
+
             # データチャンクをファイル末尾のデータ領域に追記
             data_end = self._calc_data_end()
             chunk = _pack_chunk(data)
