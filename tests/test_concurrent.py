@@ -126,6 +126,19 @@ class TestConcurrentWritesMultipleInstances:
         assert verifier.get(ulid1).data == b"data-1"
         assert verifier.get(ulid2).data == b"data-2"
 
+    def test_write_path_does_not_call_load_and_self_deadlock(self, tmp_storage_path):
+        """write 時は _load() を呼ばず、自己デッドロック経路に入らない。"""
+        storage = read_storage(tmp_storage_path, create_if_not_exists=True)
+
+        def fail_if_called():
+            raise AssertionError("write path must not call _load(); use _load_locked()")
+
+        # 初期化後に _load を差し替え、write 中の誤呼び出しを確実に検出する。
+        storage._sf._load = fail_if_called
+
+        ulid = storage.set(item(name="no-deadlock", data=b"ok"))
+        assert storage.get(ulid).data == b"ok"
+
     def test_lock_prevents_simultaneous_writes(self, tmp_storage_path):
         """ロックファイルが存在する間は書き込みがブロックされ、解放後に成功する。"""
         storage = read_storage(tmp_storage_path, create_if_not_exists=True)

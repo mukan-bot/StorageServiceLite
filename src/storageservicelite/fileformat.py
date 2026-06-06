@@ -98,7 +98,24 @@ class StorageFile:
 
     def _load(self) -> None:
         """ストレージファイルを読み込み、インデックスをメモリに展開する。"""
-        self._index = self._read_index_from_disk()
+        lock_path = self.path + LOCK_SUFFIX
+        deadline = time.monotonic() + 5.0
+
+        while True:
+            if os.path.exists(lock_path):
+                if time.monotonic() > deadline:
+                    raise TimeoutError("ストレージファイルの読み込み待機がタイムアウトしました。")
+                time.sleep(0.01)
+                continue
+
+            try:
+                self._index = self._read_index_from_disk()
+                return
+            except (json.JSONDecodeError, IOError, ValueError):
+                # 書き込みロックの遷移直後に中間状態を読んだ場合は短時間リトライする。
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.01)
 
     def _load_locked(self) -> None:
         """
