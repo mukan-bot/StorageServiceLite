@@ -23,6 +23,7 @@ let selectedItem = null;
 let selectedHistory = 1;
 let previewMode = "auto";
 let activeObjectUrl = null;
+let s3SdkModule = null;
 
 const elements = {
   fileInput: document.querySelector("#file-input"),
@@ -45,6 +46,17 @@ const elements = {
   chunkSize: document.querySelector("#chunk-size"),
   preview: document.querySelector("#preview"),
   downloadButton: document.querySelector("#download-button"),
+  s3Endpoint: document.querySelector("#s3-endpoint"),
+  s3Region: document.querySelector("#s3-region"),
+  s3Bucket: document.querySelector("#s3-bucket"),
+  s3ObjectKey: document.querySelector("#s3-object-key"),
+  s3AccessKey: document.querySelector("#s3-access-key"),
+  s3SecretKey: document.querySelector("#s3-secret-key"),
+  s3SessionToken: document.querySelector("#s3-session-token"),
+  s3UploadTarget: document.querySelector("#s3-upload-target"),
+  s3ForcePathStyle: document.querySelector("#s3-force-path-style"),
+  s3UploadButton: document.querySelector("#s3-upload-button"),
+  s3UploadStatus: document.querySelector("#s3-upload-status"),
   itemTemplate: document.querySelector("#item-template"),
   previewButtons: document.querySelectorAll("[data-preview]"),
 };
@@ -88,6 +100,24 @@ elements.historySelect.addEventListener("change", () => {
   renderSelectedChunk();
 });
 elements.downloadButton.addEventListener("click", downloadSelectedChunk);
+elements.s3UploadButton?.addEventListener("click", () => {
+  void uploadToS3Compatible();
+});
+
+[
+  elements.s3Endpoint,
+  elements.s3Region,
+  elements.s3Bucket,
+  elements.s3ObjectKey,
+  elements.s3AccessKey,
+  elements.s3SecretKey,
+  elements.s3SessionToken,
+  elements.s3UploadTarget,
+  elements.s3ForcePathStyle,
+].forEach((field) => {
+  field?.addEventListener("input", updateS3UploadButtonState);
+  field?.addEventListener("change", updateS3UploadButtonState);
+});
 
 elements.previewButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -116,11 +146,14 @@ async function loadFile(file) {
     elements.showDeleted.disabled = false;
     renderItemList();
     showMessage("読み込みが完了しました。アイテムを選択すると内容を確認できます。", false);
+    suggestDefaultS3ObjectKey();
+    updateS3UploadButtonState();
   } catch (error) {
     parsedStorage = null;
     renderItemList();
     elements.fileSummary.classList.add("hidden");
     showMessage(error instanceof Error ? error.message : String(error), true);
+    updateS3UploadButtonState();
   }
 }
 
@@ -263,6 +296,8 @@ function selectItem(item) {
   selectedHistory = 1;
   renderItemList();
   renderDetails();
+  suggestDefaultS3ObjectKey();
+  updateS3UploadButtonState();
 }
 
 function renderDetails() {
@@ -285,6 +320,7 @@ function renderDetails() {
     elements.historySelect.disabled = true;
     elements.downloadButton.disabled = true;
     elements.preview.textContent = "このアイテムは削除済みです。";
+    updateS3UploadButtonState();
     return;
   }
 
@@ -298,6 +334,7 @@ function renderDetails() {
   });
   elements.historySelect.disabled = false;
   renderSelectedChunk();
+  updateS3UploadButtonState();
 }
 
 function renderSelectedChunk() {
@@ -411,6 +448,177 @@ function resetSelection() {
   elements.detailEmpty.classList.remove("hidden");
   elements.detail.classList.add("hidden");
   elements.downloadButton.disabled = true;
+  updateS3UploadButtonState();
+}
+
+function suggestDefaultS3ObjectKey() {
+  if (!elements.s3ObjectKey || elements.s3ObjectKey.value.trim()) {
+    return;
+  }
+
+  if (!parsedStorage?.file) {
+    return;
+  }
+
+  const stamp = new Date().toISOString().replace(/[:]/g, "-").replace(/\..+/, "");
+  const safeName = sanitizeFilename(parsedStorage.file.name);
+  elements.s3ObjectKey.value = `storageservicelite/${stamp}/${safeName}`;
+}
+
+function updateS3UploadButtonState() {
+  if (!elements.s3UploadButton) {
+    return;
+  }
+  const isReady =
+    Boolean(parsedStorage) &&
+    hasValue(elements.s3Endpoint) &&
+    hasValue(elements.s3Region) &&
+    hasValue(elements.s3Bucket) &&
+    hasValue(elements.s3ObjectKey) &&
+    hasValue(elements.s3AccessKey) &&
+    hasValue(elements.s3SecretKey) &&
+    isValidUploadTarget();
+  elements.s3UploadButton.disabled = !isReady;
+}
+
+function isValidUploadTarget() {
+  const target = elements.s3UploadTarget?.value ?? "storage-file";
+  if (target === "storage-file") {
+    return Boolean(parsedStorage?.file);
+  }
+  if (target === "selected-history") {
+    return Boolean(parsedStorage && selectedItem && !selectedItem.deleted && getSelectedChunk());
+  }
+  return false;
+}
+
+/** @param {HTMLInputElement | HTMLSelectElement | null} element */
+function hasValue(element) {
+  return Boolean(element?.value?.trim());
+}
+
+async function uploadToS3Compatible() {
+  if (!parsedStorage) {
+    setS3UploadStatus("先に .ssobj を読み込んでください。", true);
+    return;
+  }
+
+  const endpoint = elements.s3Endpoint?.value.trim() ?? "";
+  const region = elements.s3Region?.value.trim() ?? "";
+  const bucket = elements.s3Bucket?.value.trim() ?? "";
+  const key = elements.s3ObjectKey?.value.trim() ?? "";
+  const accessKeyId = elements.s3AccessKey?.value.trim() ?? "";
+  const secretAccessKey = elements.s3SecretKey?.value.trim() ?? "";
+  const sessionToken = elements.s3SessionToken?.value.trim() ?? "";
+  const forcePathStyle = Boolean(elements.s3ForcePathStyle?.checked);
+  const target = elements.s3UploadTarget?.value ?? "storage-file";
+
+  if (!endpoint || !region || !bucket || !key || !accessKeyId || !secretAccessKey) {
+    setS3UploadStatus("必須項目をすべて入力してください。", true);
+    return;
+  }
+
+  if (target === "selected-history" && (!selectedItem || selectedItem.deleted || !getSelectedChunk())) {
+    setS3UploadStatus("選択中ヒストリーをアップロードするには、有効なアイテムを選択してください。", true);
+    return;
+  }
+
+  const source = buildUploadSource(target);
+  if (!source) {
+    setS3UploadStatus("アップロード対象のデータを準備できませんでした。", true);
+    return;
+  }
+
+  setS3UploadButtonBusy(true);
+  setS3UploadStatus("S3互換APIへアップロード中...", false);
+
+  try {
+    const sdk = await loadS3Sdk();
+    const client = new sdk.S3Client({
+      region,
+      endpoint,
+      forcePathStyle,
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+        ...(sessionToken ? { sessionToken } : {}),
+      },
+    });
+
+    const command = new sdk.PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: source.body,
+      ContentType: source.contentType,
+      Metadata: {
+        source: source.source,
+      },
+    });
+
+    await client.send(command);
+    setS3UploadStatus(`アップロード成功: s3://${bucket}/${key} (${formatBytes(source.size)})`, false);
+  } catch (error) {
+    const details = error instanceof Error ? error.message : String(error);
+    setS3UploadStatus(`アップロード失敗: ${details}`, true);
+  } finally {
+    setS3UploadButtonBusy(false);
+    updateS3UploadButtonState();
+  }
+}
+
+/** @param {"storage-file" | "selected-history"} target */
+function buildUploadSource(target) {
+  if (!parsedStorage) {
+    return null;
+  }
+
+  if (target === "storage-file") {
+    return {
+      source: "storage-file",
+      body: parsedStorage.file,
+      size: parsedStorage.file.size,
+      contentType: "application/octet-stream",
+    };
+  }
+
+  const chunk = getSelectedChunk();
+  if (!selectedItem || !chunk) {
+    return null;
+  }
+  const bytes = readChunkBytes(parsedStorage.buffer, chunk);
+  const contentType = detectImageMime(bytes) ?? (isLikelyText(bytes) ? "text/plain; charset=utf-8" : "application/octet-stream");
+  return {
+    source: "selected-history",
+    body: new Blob([bytes], { type: contentType }),
+    size: bytes.byteLength,
+    contentType,
+  };
+}
+
+function setS3UploadButtonBusy(isBusy) {
+  if (!elements.s3UploadButton) {
+    return;
+  }
+  elements.s3UploadButton.disabled = isBusy;
+  elements.s3UploadButton.textContent = isBusy ? "アップロード中..." : "S3へアップロード";
+}
+
+/** @param {string} text
+ * @param {boolean} isError
+ */
+function setS3UploadStatus(text, isError) {
+  if (!elements.s3UploadStatus) {
+    return;
+  }
+  elements.s3UploadStatus.classList.toggle("error", isError);
+  elements.s3UploadStatus.textContent = text;
+}
+
+async function loadS3Sdk() {
+  if (!s3SdkModule) {
+    s3SdkModule = await import("https://cdn.jsdelivr.net/npm/@aws-sdk/client-s3@3.817.0/+esm");
+  }
+  return s3SdkModule;
 }
 
 function clearMessage() {
