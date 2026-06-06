@@ -98,25 +98,7 @@ class StorageFile:
 
     def _load(self) -> None:
         """ストレージファイルを読み込み、インデックスをメモリに展開する。"""
-        lock_path = self.path + LOCK_SUFFIX
-        deadline = time.monotonic() + 5.0
-
-        while True:
-            # 書き込み中はロック解放を待ってから読み込む
-            if os.path.exists(lock_path):
-                if time.monotonic() > deadline:
-                    raise TimeoutError("ストレージファイルの読み込み待機がタイムアウトしました。")
-                time.sleep(0.01)
-                continue
-
-            try:
-                self._index = self._read_index_from_disk()
-                return
-            except json.JSONDecodeError:
-                # ロック状態の遷移中に一時的な不整合を読んだ場合はリトライする
-                if time.monotonic() > deadline:
-                    raise
-                time.sleep(0.01)
+        self._index = self._read_index_from_disk()
 
     def _load_locked(self) -> None:
         """
@@ -309,45 +291,34 @@ class StorageFile:
         """
         if self.read_only:
             raise PermissionError("読み取り専用モードでは書き込みできません。")
-        self._acquire_lock()
-        try:
-            self._load_locked()
 
-            entry = self._get_entry(ulid)
-            chunks = entry["chunks"]
+        entry = self._get_entry(ulid)
+        chunks = entry["chunks"]
 
-            if history is None:
-                # 最新バージョン (末尾) を1つ削除
-                new_chunks = chunks[:-1]
-            else:
-                # history=N を新しい最新(history=1)にする
-                # 末尾から (N-1) 個を削除する
-                # 例: 4バージョン, history=2 → 末尾1個削除 → 3バージョン残る
-                if history < 1 or history > len(chunks):
-                    raise IndexError(
-                        f"ヒストリー {history} は範囲外です (利用可能: 1〜{len(chunks)})。"
-                    )
-                new_len = len(chunks) - (history - 1)
-                new_chunks = chunks[:new_len]
+        if history is None:
+            # 最新バージョン (末尾) を1つ削除
+            new_chunks = chunks[:-1]
+        else:
+            # history=N を新しい最新(history=1)にする
+            # 末尾から (N-1) 個を削除する
+            # 例: 4バージョン, history=2 → 末尾1個削除 → 3バージョン残る
+            if history < 1 or history > len(chunks):
+                raise IndexError(
+                    f"ヒストリー {history} は範囲外です (利用可能: 1〜{len(chunks)})。"
+                )
+            new_len = len(chunks) - (history - 1)
+            new_chunks = chunks[:new_len]
 
-            self._index[ulid]["chunks"] = new_chunks
-            self._flush_locked()
-        finally:
-            self._release_lock()
+        self._index[ulid]["chunks"] = new_chunks
+        self._flush()
 
     def delete_item(self, ulid: str) -> None:
         """アイテムを完全に削除する (インデックスから除去)。"""
         if self.read_only:
             raise PermissionError("読み取り専用モードでは書き込みできません。")
-
-        self._acquire_lock()
-        try:
-            self._load_locked()
-            self._get_entry(ulid)  # 存在確認
-            del self._index[ulid]
-            self._flush_locked()
-        finally:
-            self._release_lock()
+        self._get_entry(ulid)  # 存在確認
+        del self._index[ulid]
+        self._flush()
 
     def get_metadata(self, ulid: str) -> dict:
         """
